@@ -79,12 +79,6 @@ class Salesforce {
 		if($limit > 0)
 			$soql .= " LIMIT $limit";
 
-		$redis = new Redis() or die("Can't load Redis module.");
-		$redis->connect('127.0.0.1');
-
-		// if($redis->exists($soql))
-		// 	return unserialize($redis->get($soql));
-
 		echo 'Creating job...';
 		$job = $myBulkApiConnection->createJob($job);
 		echo 'ok'.PHP_EOL;		
@@ -125,8 +119,6 @@ class Salesforce {
 		// first row is header
 		$result->header = array_shift($result->data);
 		
-		$redis->set($soql, serialize($result));
-
 		return $result;
 	}
 
