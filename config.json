@@ -1,0 +1,41 @@
+{
+    "objects": {
+        "Lead": {
+            "fields": [
+                "Salutation",
+                "FirstName",
+                "LastName",
+                "Email",
+                "HasOptedOutOfEmail",
+                "Phone",
+                "LeadSource",
+                "CreatedDate"
+            ]
+        },
+        "Contact" : {
+            "fields": [
+                "Salutation",
+                "FirstName",
+                "LastName",
+                "Email",
+                "HasOptedOutOfEmail",
+                "Phone",
+                "AccountId",
+                "CreatedDate"
+            ]
+        }
+    },
+
+    "salesforce": {
+        "user":"",
+        "pass":""
+    },
+
+    "database": {
+        "type":"mysql",
+        "host":"",
+        "user":"",
+        "pass":"",
+        "database":""
+    }
+}
