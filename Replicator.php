@@ -201,7 +201,7 @@ class Replicator {
 		// validate database config
 		$db = $this->config['database'];
 		if(empty($db) || empty($db['type']) || empty($db['host']) || 
-		   empty($db['user']) || empty($db['pass']) || empty($db['database']))
+		   empty($db['user']) || !isset($db['pass']) || empty($db['database']))
 			throw new Exception($this::CONFIG_FILE . ' is missing required database parameters');
 
 	}
