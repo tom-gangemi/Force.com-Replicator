@@ -40,7 +40,6 @@ class DB {
 			return;
 
 		$this->db->beginTransaction();
-		$this->openTransaction = true;
 	}
 
 	public function commitTransaction($final=false) {
@@ -49,13 +48,11 @@ class DB {
 
 		$this->transactionDepth = 0;
 		$this->db->commit();
-		$this->openTransaction = false;
 	}
 
 	public function rollbackTransaction() {
 		$this->transactionDepth = 0;
 		$dbConnect->rollback();
-		$this->openTransaction = false;
 	}
 
 	public function tableExists($table) {
@@ -120,7 +117,20 @@ class DB {
 
 	}
 	
-	public function upsertCsvValues($table, $header, $values, $syncDatetime, $batchSize=null) {
+
+	public function logSyncHistory($table, $syncDatetime=null) {
+		
+		if(!isset($syncDatetime))
+			$syncDatetime = date("Y-m-d H:i:s");
+
+		$this->db->query(
+			'INSERT INTO '. $this::SYNC_HISTORY_TABLE .
+			" (object_name, sync_time) VALUES('{$table}', '{$syncDatetime}')"
+		);
+
+	}
+
+	public function upsertCsvValues($table, $header, $values, $batchSize=null) {
 
 		if($batchSize === null)
 			$batchSize = $this->batchInsertSize;
@@ -129,12 +139,7 @@ class DB {
 		$fieldUpdates = array_map(function($field) {return "{$field}=VALUES({$field})";}, $header);
 		$fieldUpdates = implode(',', $fieldUpdates);
 
-		$this->beginTransaction();
-
-		$this->db->query(
-			'INSERT INTO '. $this::SYNC_HISTORY_TABLE .
-			" (object_name, sync_time) VALUES('{$table}', '{$syncDatetime}')"
-		);
+		$this->beginTransaction(true);
 
 		foreach(array_chunk($values, $batchSize) as $chunk) {
 			// upsertValues batchInsertSize records at a time

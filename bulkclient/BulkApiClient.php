@@ -395,17 +395,18 @@ class BulkApiClient {
             curl_setopt($ch, CURLOPT_COOKIE, implode("; ", $cookies));
         }
 
-        if (isset($toFile)) {
-            curl_setopt($ch, CURLOPT_FILE, $toFile);
-        } else {
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        }
-
         $this->log("REQUEST \n POST: $isPost \n URL: $url \n HTTP HEADERS: \n" . print_r($httpHeaders, true) . " DATA:\n " . htmlspecialchars($data));
 
-        $chResponse = curl_exec($ch);
-
-        $this->log("RESPONSE \n" . (isset($toFile) ? ("Sent to file: " . $toFile) : htmlspecialchars($chResponse)));
+        if (isset($toFile)) {
+            // if writing to file don't return the data and don't send it to the log (memory saving measure)
+            curl_setopt($ch, CURLOPT_FILE, $toFile);
+            curl_exec($ch);
+            $chResponse = null;
+        } else {
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            $chResponse = curl_exec($ch);
+            $this->log("RESPONSE \n" . (isset($toFile) ? ("Sent to file: " . $toFile) : htmlspecialchars($chResponse)));
+        }
 
         if (curl_error($ch) != null) {
             $this->log("ERROR \n" . htmlspecialchars(curl_error($ch)));

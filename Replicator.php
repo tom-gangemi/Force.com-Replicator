@@ -18,6 +18,7 @@ class Replicator {
 	private $config = null;         // the config file in memory
 	private $schemaSynced = false;  // has the schema been synced
 	private $fieldTypes = null;     // keep track of field types
+	private $fieldsToQuery = null;
 
 	const CONFIG_FILE = 'config.json';
 
@@ -64,7 +65,7 @@ class Replicator {
 
 		// load field types into memory
 		if($this->fieldTypes === null)
-			foreach(array_keys($this->config['objects']) as $objectName)
+			foreach(array_keys($this->fieldsToQuery) as $objectName)
 				$this->fieldTypes[$objectName] = $this->db->getFields($objectName);
 
 		// start syncing each object
@@ -74,44 +75,71 @@ class Replicator {
 
 			$thisSync = date("Y-m-d H:i:s");
 			$previousSync = date("Y-m-d\TH:i:s\Z", strtotime($this->db->getMostRecentSync($objectName)));
+			
+			// open memory stream for storing csv
+			$fh = fopen("php://memory", 'r+');			
 
-			$result = $this->sf->batchQuery($objectName, $object['fields'], $previousSync);
-			$result->header = str_getcsv(strtolower($result->header), ',', '"');
+			$result = $this->sf->batchQuery($objectName, $this->fieldsToQuery[$objectName], $previousSync, $fh);
+			if($result === false) {
+				echo "No new or modified records found" . PHP_EOL;
+				continue;
+			}			
+
+			$header = fgetcsv($fh, 0, ',', '"', chr(0));
+			$fieldCount = count($header);
 
 			$fieldsToConvert = array();
 			$fieldsToEscape = array();
 			// decide which fields need to be treated before inserting into local db
-			foreach($result->header as $k => $field) {
-				$convertFunction = $this->getCovertFunction($this->fieldTypes[$objectName][$field]);
+			foreach($header as $k => $field) {
+				$header[$k] = $field = strtolower($field);
+				$convertFunction = $this->getConvertFunction($this->fieldTypes[$objectName][$field]);
+				
 				if($convertFunction != null)
 					$fieldsToConvert[$k] = $convertFunction;
 
 				if($this->isEscapeRequired($this->fieldTypes[$objectName][$field]))
 					$fieldsToEscape[] = $k;
-			}
-
-			$fieldCount = count($result->header);
+			}			
 			
-			// convert and escape data
-			echo "Converting data...";
-			foreach($result->data as $k => $rowCsv) {
-				// use ascii null to avoid escaping
-				$rowArr = str_getcsv($rowCsv, ',', '"', chr(0));
+			echo "Begin converting and upserting data...".PHP_EOL;
 
-				if(count($rowArr) != $fieldCount)
-					throw new Exception("error parsing row $k ($rowCsv)");
+			$this->db->beginTransaction();
+			$this->db->logSyncHistory($objectName, $thisSync);
+
+			$upsertCsv = array();
+			$rowCount = 0;
+			$upsertBatchSize = @$this->config['objects'][$objectName]['options']['upsertBatchSize'];
+
+ 			while(($data = fgetcsv($fh, 0, ',', '"', chr(0))) !== false) {
+
+				if(count($data) != $fieldCount) {
+					print_r($data);
+					throw new Exception('error parsing row');
+				}
 
 				foreach($fieldsToConvert as $key => $func)
-					$rowArr[$key] = $this->$func($rowArr[$key]);
+					$data[$key] = $this->$func($data[$key]);
 
 				foreach($fieldsToEscape as $key)
-					$rowArr[$key] = $this->db->quote($rowArr[$key]);
+					$data[$key] = $this->db->quote($data[$key]);
 
-				$result->data[$k] = implode(',', $rowArr);
-			}
-			echo "ok".PHP_EOL;
+				$upsertCsv[] = implode(',', $data);
+				$rowCount++;
+				if($upsertBatchSize && $rowCount >= $upsertBatchSize) {
+					$this->db->upsertCsvValues($objectName, $header, $upsertCsv, $upsertBatchSize);
+					$upsertCsv = array();
+					$rowCount = 0;
+				}
+ 			}
 
-			$this->db->upsertCsvValues($objectName, $result->header, $result->data, $thisSync);
+ 			if($rowCount > 0)
+				$this->db->upsertCsvValues($objectName, $header, $upsertCsv, $upsertBatchSize);
+
+			$this->db->commitTransaction();
+			fclose($fh);
+
+			echo "Finished sync - $objectName".PHP_EOL.PHP_EOL;
 		}
 
 		// revert to original timezone
@@ -122,66 +150,89 @@ class Replicator {
 	 * Convert Salesforce object definitions into database tables and create fields as defined by createFieldDefinition().
 	 */
 	public function syncSchema() {
-
 		// determine which sObjects need to be queried and determine fields that need adding
-		$sObjectsToQuery = array();
+
+		$objectsToQuery = array();
+		$existingFields = array();
 		foreach($this->config['objects'] as $objectName => $object) {
+		
+			// get existing fields
+			if($this->db->tableExists($objectName))
+				$existingFields[$objectName] = $this->db->getFields($objectName);
+			else
+				$existingFields[$objectName] = array();
 
-			// put field names into an array and lowercase them
 			$fields = $object['fields'];
-			
-			if(!$this->db->tableExists($objectName)) {
 
-				// table doesn't exist, add all fields
-				$sObjectsToQuery[$objectName] = $fields;
+			// this gets overwritten later for objects with *
+			$this->fieldsToQuery[$objectName] = $fields;
+	
+			if(in_array('*', $fields)) {
+				// add all fields from Salesforce
+
+				$objectsToQuery[$objectName] = true;
+
+			} else if(is_array($existingFields[$objectName])) {
+				// some fields already exist, check for new ones
+
+				$diff = array_diff($fields, array_keys($existingFields[$objectName]));
+				if(count($diff) > 0)
+					$objectsToQuery[$objectName] = $diff;
 
 			} else {
+				// add all fields from config
 
-				// table exists, add fields that don't already exist
-				$diff = array_diff($fields, array_keys($this->db->getFields($objectName)));
-
-				if(count($diff) > 0)
-					$sObjectsToQuery[$objectName] = $diff;
+				$objectsToQuery[$objectName] = $fields;
 
 			}
 
 		}
 
-		if(count($sObjectsToQuery) > 0) {
+		if(count($objectsToQuery) > 0) {
 
 			$objectUpserts = array();
 
-			// get all field data for required sObjects
-			$describeResult = $this->sf->getSObjectFields(array_keys($sObjectsToQuery));
+			// query object schemas from Salesforce
+			$describeResult = $this->sf->getSObjectFields(array_keys($objectsToQuery));
 
-			// update tables in local db
-			foreach ($describeResult as $sObject => $fields) {
+			foreach ($describeResult as $objectName => $fields) {
 
-				$sObject = strtolower($sObject);
-
-				// check if any fields defined in config don't exist in Salesforce
+				$objectName = strtolower($objectName);
 				$allFields = array_map(function($field) {return strtolower($field->name);}, $fields);
-				$badFields = array_diff($sObjectsToQuery[$sObject], $allFields);
-				if(count($badFields) > 0)
-					throw new Exception("Invalid field(s): " . implode(', ', $badFields));
-
-				// get describe data for fields that need to be added
 				$newFields = array();
-				foreach($fields as $field) {
-					if(in_array(strtolower($field->name), $sObjectsToQuery[$sObject]))
-						$newFields[] = $field;
+
+				if(is_array($objectsToQuery[$objectName])) {
+					// check if any fields defined in config don't exist in Salesforce		
+
+					$badFields = array_diff($objectsToQuery[$objectName], $allFields);
+					if(count($badFields) > 0)
+						throw new Exception("Invalid field(s): " . implode(', ', $badFields));
+
+					// get describe data for fields that need to be added
+					foreach($fields as $field)
+						if(in_array(strtolower($field->name), $objectsToQuery[$objectName]))
+							$newFields[] = $field;
+
+				} else if(array_key_exists($objectName, $objectsToQuery)) {
+					// add all fields from Salesforce
+
+					$this->fieldsToQuery[$objectName] = $allFields;				
+					
+					foreach($fields as $field)
+						if(!array_key_exists(strtolower($field->name), $existingFields[$objectName]))
+							$newFields[] = $field;
 				}
 
 				// get mysql definition for each field
 				$fieldDefs = array();
 				foreach($newFields as $field)
-					$objectUpserts[$sObject][$field->name] = $this->createFieldDefinition($field);
+					$objectUpserts[$objectName][$field->name] = $this->createFieldDefinition($field);
 
 			}
-
+			
 			// update and create tables
-			foreach($objectUpserts as $sObject => $fieldDefs)
-				$this->db->upsertObject($sObject, $fieldDefs);
+			foreach($objectUpserts as $objectName => $fieldDefs)
+				$this->db->upsertObject($objectName, $fieldDefs);
 
 		}
 
@@ -240,7 +291,7 @@ class Replicator {
 		}
 	}
 
-	private function getCovertFunction($fieldType) {
+	private function getConvertFunction($fieldType) {
 
 		if($pos = strrpos($fieldType,'('))
 			$fieldType = substr($fieldType, 0, $pos);
@@ -250,6 +301,8 @@ class Replicator {
 				return 'convertDatetime';
 			case 'bit':
 				return 'convertBoolean';
+			case 'decimal':
+				return 'convertDecimal';
 			default:
 				return null;
 		}
@@ -269,10 +322,6 @@ class Replicator {
 		}
 	}	
 
-	private function convertDatetime($value) {
-		return date("Y-m-d H:i:s", strtotime($value));
-	}
-
 	private function convertBoolean($value) {
 		if($value == 'true')
 			return 1;
@@ -280,10 +329,25 @@ class Replicator {
 			return 0;
 	}
 
+	private function convertDatetime($value) {
+		return empty($value) ? 'NULL' : date("Y-m-d H:i:s", strtotime($value));
+	}
+
+	private function convertDecimal($value) {
+		return $value === '' ? 'NULL' : $value;
+	}
 }
 
 if(!count(debug_backtrace())) { // only run if being called directly
-
+	
+	// $fp = fopen("php://memory", 'r+');
+	// fputs($fp, "foo,bar,\"som\nething\"\nyea,yea,yea");
+	// rewind($fp);
+	// // echo stream_get_contents($fp);
+	// while (($data = fgetcsv($fp, 1000, ",")) !== FALSE)
+	// 	print_r($data);
+	
+	// fclose($fp);
 	$r = new Replicator();
 	$r->syncData();
 

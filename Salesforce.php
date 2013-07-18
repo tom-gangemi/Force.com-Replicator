@@ -58,7 +58,7 @@ class Salesforce {
 
 	}
 
-	public function batchQuery($object, $fields, $startDate=null, $limit=null) {
+	public function batchQuery($object, $fields, $startDate=null, $fh=null) {
 
 		$this->initSession();
 
@@ -76,8 +76,6 @@ class Salesforce {
 		$soql = "SELECT " . implode(',', $fields) . " FROM $object";
 		if($startDate != null)
 			$soql .= " WHERE LastModifiedDate >= $startDate";
-		if($limit > 0)
-			$soql .= " LIMIT $limit";
 
 		echo 'Creating job...';
 		$job = $myBulkApiConnection->createJob($job);
@@ -107,19 +105,42 @@ class Salesforce {
 
 		// retrieve queried data
 		foreach ($resultList as $resultId)
-		    $queryResults[$resultId] = $myBulkApiConnection->getBatchResult($job->getId(), $batch->getId(), $resultId);
+		    $myBulkApiConnection->getBatchResult($job->getId(), $batch->getId(), $resultId, $fh);
 
 		echo 'ok'.PHP_EOL;
+
+		if(isset($fh)) {
+			
+			$preview = stream_get_contents($fh,32,0);
+			rewind($fh);
+
+			if(strcasecmp($preview, 'Records not found for this query') == 0 || trim($preview) == false)
+				// return false if no records returned
+				return false;
+			else
+				return true;
+		}
+
+		die;
 		
 		$result = new stdClass;
 		// convert multi-line string into array
-		$result->data = explode("\n", reset($queryResults));
-		// remove empty row
-		array_pop($result->data);
-		// first row is header
-		$result->header = array_shift($result->data);
-		
-		return $result;
+		$result->data = explode("\n", reset($queryResults)); // breaking on multiline fields
+
+		if(count($result->data) == 1) {
+			// no records returned
+			$redis->set($soql, serialize(null));
+			return null;
+
+		} else {
+
+			// remove empty row
+			array_pop($result->data);
+			// first row is header
+			$result->header = array_shift($result->data);
+
+			return $result;
+		}
 	}
 
 	private function login() {

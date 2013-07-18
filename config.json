@@ -14,15 +14,11 @@
         },
         "Contact" : {
             "fields": [
-                "Salutation",
-                "FirstName",
-                "LastName",
-                "Email",
-                "HasOptedOutOfEmail",
-                "Phone",
-                "AccountId",
-                "CreatedDate"
-            ]
+                "*"
+            ],
+            "options": {
+                "upsertBatchSize":40000
+            }
         }
     },
 
