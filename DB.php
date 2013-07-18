@@ -113,7 +113,8 @@ class DB {
 			" WHERE object_name='{$table}' ORDER BY sync_time DESC LIMIT 1"
 		);
 
-		return $result->fetch(PDO::FETCH_ASSOC)['sync_time'];
+		$fetched = $result->fetch(PDO::FETCH_ASSOC);
+		return $fetched['sync_time'];
 
 	}
 	
