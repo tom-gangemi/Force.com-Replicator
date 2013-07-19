@@ -269,6 +269,9 @@ class Replicator {
 					case 'picklist':
 					case 'textarea':
 					case 'phone':
+					case 'percent':
+					case 'multipicklist':
+					case 'url':
 					case 'email':
 						if($field->length >= 1024)
 							return 'TEXT';
