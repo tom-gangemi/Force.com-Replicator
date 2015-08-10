@@ -27,13 +27,13 @@ class Replicator {
 		$this->loadConfig();
 		
 		// initialise Salesforce and database interfaces
-		if(isset($this->config['salesforce']['pass']))
+		if(!empty($this->config['salesforce']['pass']))
 			$pass = $this->config['salesforce']['pass'];
 		else
 			$pass = null;
 
 		$this->sf = new Salesforce($this->config['salesforce']['user'], $pass);
-		if(isset($this->config['salesforce']['endpoint']))
+		if(!empty($this->config['salesforce']['endpoint']))
 			$this->sf->setEndpoint($this->config['salesforce']['endpoint']);
 
 		$this->db = new StorageDB(
