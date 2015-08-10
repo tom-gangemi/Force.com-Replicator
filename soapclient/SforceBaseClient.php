@@ -29,7 +29,6 @@ require_once ('SforceProcessRequest.php');
 require_once ('ProxySettings.php');
 require_once ('SforceHeaderOptions.php');
 
-
 /**
  * This file contains one class.
  * @package SalesforceSoapClient
@@ -42,7 +41,7 @@ class SforceBaseClient {
 	protected $sforce;
 	protected $sessionId;
 	protected $location;
-	protected $version = '20.0';
+	protected $version = '27.0';
 
 	protected $namespace;
 
@@ -60,6 +59,10 @@ class SforceBaseClient {
 	protected $allowFieldTruncationHeader;
 	protected $localeOptions;
 	protected $packageVersionHeader;
+	
+  protected function getSoapClient($wsdl, $options) {
+		return new SoapClient($wsdl, $options);      
+  }
 	
 	public function getNamespace() {
 		return $this->namespace;
@@ -90,50 +93,53 @@ class SforceBaseClient {
 			echo 'False';
 		}
 	}
-
+	
 	/**
 	 * Connect method to www.salesforce.com
 	 *
 	 * @param string $wsdl   Salesforce.com Partner WSDL
+   * @param object $proxy  (optional) proxy settings with properties host, port,
+   *                       login and password
+   * @param array $soap_options (optional) Additional options to send to the
+   *                       SoapClient constructor. @see
+   *                       http://php.net/manual/en/soapclient.soapclient.php
 	 */
-	public function createConnection($wsdl, $proxy=null) {
-		$soapClientArray = null;
+	public function createConnection($wsdl, $proxy=null, $soap_options=array()) {
 		$phpversion = substr(phpversion(), 0, strpos(phpversion(), '-'));
-//		if (phpversion() > '5.1.2') {
-		if ($phpversion > '5.1.2') {
-			$soapClientArray = array (
-		  'user_agent' => 'salesforce-toolkit-php/'.$this->version,
-          'encoding' => 'utf-8',
-          'trace' => 1,
-          'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP
-			);
-		} else {
-			$soapClientArray = array (
-          'user_agent' => 'salesforce-toolkit-php/'.$this->version,
-          'encoding' => 'utf-8',
-          'trace' => 1
-			);
+		
+		$soapClientArray = array_merge(array (
+			'user_agent' => 'salesforce-toolkit-php/'.$this->version,
+			'encoding' => 'utf-8',
+			'trace' => 1,
+			'features' => SOAP_SINGLE_ELEMENT_ARRAYS,
+			'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP
+		), $soap_options);
+
+		// We don't need to parse out any subversion suffix - e.g. "-01" since
+		// PHP type conversion will ignore it
+		if (phpversion() < 5.2) {
+			die("PHP versions older than 5.2 are no longer supported. Please upgrade!");
 		}
 
 		if ($proxy != null) {
-  		$proxySettings = array();
-	    $proxySettings['proxy_host'] = $proxy->host;
-		  $proxySettings['proxy_port'] = $proxy->port; // Use an integer, not a string
-  		$proxySettings['proxy_login'] = $proxy->login; 
-      $proxySettings['proxy_password'] = $proxy->password;
-
-  		$soapClientArray = array_merge($soapClientArray, $proxySettings);
+            $proxySettings = array();
+            $proxySettings['proxy_host'] = $proxy->host;
+            $proxySettings['proxy_port'] = $proxy->port; // Use an integer, not a string
+            $proxySettings['proxy_login'] = $proxy->login; 
+            $proxySettings['proxy_password'] = $proxy->password;
+            $soapClientArray = array_merge($soapClientArray, $proxySettings);
 		}
 
-		$this->sforce = new SoapClient($wsdl, $soapClientArray);
+  	$this->sforce = $this->getSoapClient($wsdl, $soapClientArray);
+
 		return $this->sforce;
 	}
 
 	public function setCallOptions($header) {
 		if ($header != NULL) {
 			$this->callOptions = new SoapHeader($this->namespace, 'CallOptions', array (
-          'client' => $header->client,
-          'defaultNamespace' => $header->defaultNamespace
+		  'client' => $header->client,
+		  'defaultNamespace' => $header->defaultNamespace
 			));
 		} else {
 			$this->callOptions = NULL;
@@ -157,8 +163,8 @@ class SforceBaseClient {
 			$this->sforce->__setSoapHeaders(array($this->loginScopeHeader));
 		}
 		$result = $this->sforce->login(array (
-         'username' => $username,
-         'password' => $password
+		 'username' => $username,
+		 'password' => $password
 		));
 		$result = $result->result;
 		$this->_setLoginHeader($result);
@@ -166,26 +172,26 @@ class SforceBaseClient {
 		return $result;
 	}
 
- 	/**
+	/**
 	 * log outs from the salseforce system`
 	 *
 	 * @return LogoutResult
 	 */
- 	public function logout() {
-  $this->setHeaders("logout");
-		$arg = new stdClass;
+	public function logout() {
+        $this->setHeaders("logout");
+		$arg = new stdClass();
 		return $this->sforce->logout();
 	}
  
- 	/**
+	/**
 	 *invalidate Sessions from the salseforce system`
 	 *
 	 * @return invalidateSessionsResult
 	 */
- 	public function invalidateSessions() {
-  $this->setHeaders("invalidateSessions");
-		$arg = new stdClass;
-  $this->logout();
+	public function invalidateSessions() {
+        $this->setHeaders("invalidateSessions");
+		$arg = new stdClass();
+        $this->logout();
 		return $this->sforce->invalidateSessions();
 	} 
  
@@ -214,7 +220,7 @@ class SforceBaseClient {
 		$this->sforce->__setSoapHeaders(NULL);
 		
 		$header_array = array (
-		    $this->sessionHeader
+			$this->sessionHeader
 		);
 
 		$header = $this->callOptions;
@@ -283,11 +289,11 @@ class SforceBaseClient {
 		// try to add allowFieldTruncationHeader
 		$allowFieldTruncationHeaderCalls = array(
 			'convertLead', 'create', 'merge',
-		    'process', 'undelete', 'update',
-		    'upsert',
+			'process', 'undelete', 'update',
+			'upsert',
 		);
 		if (in_array($call, $allowFieldTruncationHeaderCalls)) {
-		    $header = $this->allowFieldTruncationHeader;
+			$header = $this->allowFieldTruncationHeader;
 			if ($header != NULL) {
 				array_push($header_array, $header);
 			}
@@ -295,7 +301,7 @@ class SforceBaseClient {
 		
 		// try to add localeOptions
 		if ($call == 'describeSObject' || $call == 'describeSObjects') {
-		    $header = $this->localeOptions;
+			$header = $this->localeOptions;
 			if ($header != NULL) {
 				array_push($header_array, $header);
 			}
@@ -303,14 +309,14 @@ class SforceBaseClient {
 		
 		// try to add PackageVersionHeader
 		$packageVersionHeaderCalls = array(
-		    'convertLead', 'create', 'delete', 'describeGlobal',
-		    'describeLayout', 'describeSObject', 'describeSObjects',
-		    'describeSoftphoneLayout', 'describeTabs', 'merge',
-		    'process', 'query', 'retrieve', 'search', 'undelete',
-		    'update', 'upsert',
+			'convertLead', 'create', 'delete', 'describeGlobal',
+			'describeLayout', 'describeSObject', 'describeSObjects',
+			'describeSoftphoneLayout', 'describeTabs', 'merge',
+			'process', 'query', 'retrieve', 'search', 'undelete',
+			'update', 'upsert',
 		);
 		if(in_array($call, $packageVersionHeaderCalls)) {
-		    $header = $this->packageVersionHeader;
+			$header = $this->packageVersionHeader;
 			if ($header != NULL) {
 				array_push($header_array, $header);
 			}
@@ -323,8 +329,8 @@ class SforceBaseClient {
 	public function setAssignmentRuleHeader($header) {
 		if ($header != NULL) {
 			$this->assignmentRuleHeader = new SoapHeader($this->namespace, 'AssignmentRuleHeader', array (
-             'assignmentRuleId' => $header->assignmentRuleId,
-             'useDefaultRule' => $header->useDefaultRuleFlag
+			 'assignmentRuleId' => $header->assignmentRuleId,
+			 'useDefaultRule' => $header->useDefaultRuleFlag
 			));
 		} else {
 			$this->assignmentRuleHeader = NULL;
@@ -334,9 +340,9 @@ class SforceBaseClient {
 	public function setEmailHeader($header) {
 		if ($header != NULL) {
 			$this->emailHeader = new SoapHeader($this->namespace, 'EmailHeader', array (
-             'triggerAutoResponseEmail' => $header->triggerAutoResponseEmail,
-             'triggerOtherEmail' => $header->triggerOtherEmail,
-             'triggerUserEmail' => $header->triggerUserEmail
+			 'triggerAutoResponseEmail' => $header->triggerAutoResponseEmail,
+			 'triggerOtherEmail' => $header->triggerOtherEmail,
+			 'triggerUserEmail' => $header->triggerUserEmail
 			));
 		} else {
 			$this->emailHeader = NULL;
@@ -346,8 +352,8 @@ class SforceBaseClient {
 	public function setLoginScopeHeader($header) {
 		if ($header != NULL) {
 			$this->loginScopeHeader = new SoapHeader($this->namespace, 'LoginScopeHeader', array (
-        'organizationId' => $header->organizationId,
-        'portalId' => $header->portalId
+		'organizationId' => $header->organizationId,
+		'portalId' => $header->portalId
 			));
 		} else {
 			$this->loginScopeHeader = NULL;
@@ -358,7 +364,7 @@ class SforceBaseClient {
 	public function setMruHeader($header) {
 		if ($header != NULL) {
 			$this->mruHeader = new SoapHeader($this->namespace, 'MruHeader', array (
-             'updateMru' => $header->updateMruFlag
+			 'updateMru' => $header->updateMruFlag
 			));
 		} else {
 			$this->mruHeader = NULL;
@@ -368,7 +374,7 @@ class SforceBaseClient {
 	public function setSessionHeader($id) {
 		if ($id != NULL) {
 			$this->sessionHeader = new SoapHeader($this->namespace, 'SessionHeader', array (
-             'sessionId' => $id
+			 'sessionId' => $id
 			));
 			$this->sessionId = $id;
 		} else {
@@ -380,7 +386,7 @@ class SforceBaseClient {
 	public function setUserTerritoryDeleteHeader($header) {
 		if ($header != NULL) {
 			$this->userTerritoryDeleteHeader = new SoapHeader($this->namespace, 'UserTerritoryDeleteHeader  ', array (
-             'transferToUserId' => $header->transferToUserId
+			 'transferToUserId' => $header->transferToUserId
 			));
 		} else {
 			$this->userTerritoryDeleteHeader = NULL;
@@ -390,7 +396,7 @@ class SforceBaseClient {
 	public function setQueryOptions($header) {
 		if ($header != NULL) {
 			$this->queryHeader = new SoapHeader($this->namespace, 'QueryOptions', array (
-             'batchSize' => $header->batchSize
+			 'batchSize' => $header->batchSize
 			));
 		} else {
 			$this->queryHeader = NULL;
@@ -398,10 +404,10 @@ class SforceBaseClient {
 	}
 	
 	public function setAllowFieldTruncationHeader($header) {
-	    if ($header != NULL) {
+		if ($header != NULL) {
 			$this->allowFieldTruncationHeader = new SoapHeader($this->namespace, 'AllowFieldTruncationHeader', array (
-             		'allowFieldTruncation' => $header->allowFieldTruncation
-			    )
+					'allowFieldTruncation' => $header->allowFieldTruncation
+				)
 			);
 		} else {
 			$this->allowFieldTruncationHeader = NULL;
@@ -409,11 +415,11 @@ class SforceBaseClient {
 	}
 	
 	public function setLocaleOptions($header) {
-	    if ($header != NULL) {
+		if ($header != NULL) {
 			$this->localeOptions = new SoapHeader($this->namespace, 'LocaleOptions',
-			    array (
-            		'language' => $header->language
-			    )
+				array (
+					'language' => $header->language
+				)
 			);
 		} else {
 			$this->localeOptions = NULL;
@@ -424,20 +430,20 @@ class SforceBaseClient {
 	 * @param $header
 	 */
 	public function setPackageVersionHeader($header) {
-	    if ($header != NULL) {
-	        $headerData = array('packageVersions' => array());
-	        
-	        foreach ($header->packageVersions as $key => $hdrElem) {
-	            $headerData['packageVersions'][] = array(
-	                'majorNumber' => $hdrElem->majorNumber,
-	                'minorNumber' => $hdrElem->minorNumber,
-                    'namespace' => $hdrElem->namespace,
-                );
-	        }
-	        
+		if ($header != NULL) {
+			$headerData = array('packageVersions' => array());
+			
+			foreach ($header->packageVersions as $key => $hdrElem) {
+				$headerData['packageVersions'][] = array(
+					'majorNumber' => $hdrElem->majorNumber,
+					'minorNumber' => $hdrElem->minorNumber,
+					'namespace' => $hdrElem->namespace,
+				);
+			}
+			
 			$this->packageVersionHeader = new SoapHeader($this->namespace,
 				'PackageVersionHeader',
-			    $headerData
+				$headerData
 			);
 		} else {
 			$this->packageVersionHeader = NULL;
@@ -514,34 +520,36 @@ class SforceBaseClient {
 	}
 
   public function sendSingleEmail($request) {
-    if (is_array($request)) {
-      $messages = array();
-      foreach ($request as $r) {
-        $email = new SoapVar($r, SOAP_ENC_OBJECT, 'SingleEmailMessage', $this->namespace);
-        array_push($messages, $email);
-      }
-      $arg->messages = $messages;
-      return $this->_sendEmail($arg);
-    } else {
-      $backtrace = debug_backtrace();
-      die('Please pass in array to this function:  '.$backtrace[0]['function']);
-    }
+	if (is_array($request)) {
+	  $messages = array();
+	  foreach ($request as $r) {
+		$email = new SoapVar($r, SOAP_ENC_OBJECT, 'SingleEmailMessage', $this->namespace);
+		array_push($messages, $email);
+	  }
+	  $arg = new stdClass();
+	  $arg->messages = $messages;
+	  return $this->_sendEmail($arg);
+	} else {
+	  $backtrace = debug_backtrace();
+	  die('Please pass in array to this function:  '.$backtrace[0]['function']);
+	}
   }
 
   public function sendMassEmail($request) {
-    if (is_array($request)) {
-      $messages = array();
-      foreach ($request as $r) {
-        $email = new SoapVar($r, SOAP_ENC_OBJECT, 'MassEmailMessage', $this->namespace);
-        array_push($messages, $email);
-      }
-      $arg->messages = $messages;
-      return $this->_sendEmail($arg);
-    } else {
-      $backtrace = debug_backtrace();
-      die('Please pass in array to this function:  '.$backtrace[0]['function']);
-    }
-  }	
+	if (is_array($request)) {
+	  $messages = array();
+	  foreach ($request as $r) {
+		$email = new SoapVar($r, SOAP_ENC_OBJECT, 'MassEmailMessage', $this->namespace);
+		array_push($messages, $email);
+	  }
+	  $arg = new stdClass();
+	  $arg->messages = $messages;
+	  return $this->_sendEmail($arg);
+	} else {
+	  $backtrace = debug_backtrace();
+	  die('Please pass in array to this function:  '.$backtrace[0]['function']);
+	}
+  } 
 	
 	protected function _sendEmail($arg) {
 		$this->setHeaders();
@@ -557,7 +565,7 @@ class SforceBaseClient {
 	 */
 	public function convertLead($leadConverts) {
 		$this->setHeaders("convertLead");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->leadConverts = $leadConverts;
 		return $this->sforce->convertLead($arg);
 	}
@@ -570,9 +578,20 @@ class SforceBaseClient {
 	 */
 	public function delete($ids) {
 		$this->setHeaders("delete");
-		$arg = new stdClass;
-		$arg->ids = $ids;
-		return $this->sforce->delete($arg)->result;
+		if(count($ids) > 200) {
+			$result = array();
+			$chunked_ids = array_chunk($ids, 200);
+			foreach($chunked_ids as $cids) {
+				$arg = new stdClass;
+				$arg->ids = $cids;
+				$result = array_merge($result, $this->sforce->delete($arg)->result);
+			}
+		} else {
+			$arg = new stdClass;
+			$arg->ids = $ids;
+			$result = $this->sforce->delete($arg)->result;
+		}
+		return $result;
 	}
 
 	/**
@@ -583,7 +602,7 @@ class SforceBaseClient {
 	 */
 	public function undelete($ids) {
 		$this->setHeaders("undelete");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->ids = $ids;
 		return $this->sforce->undelete($arg)->result;
 	}
@@ -596,7 +615,7 @@ class SforceBaseClient {
 	 */
 	public function emptyRecycleBin($ids) {
 		$this->setHeaders();
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->ids = $ids;
 		return $this->sforce->emptyRecycleBin($arg)->result;
 	}
@@ -612,6 +631,7 @@ class SforceBaseClient {
 			foreach ($processRequestArray as &$process) {
 				$process = new SoapVar($process, SOAP_ENC_OBJECT, 'ProcessSubmitRequest', $this->namespace);
 			}
+			$arg = new stdClass();
 			$arg->actions = $processRequestArray;
 			return $this->_process($arg);
 		} else {
@@ -631,6 +651,7 @@ class SforceBaseClient {
 			foreach ($processRequestArray as &$process) {
 				$process = new SoapVar($process, SOAP_ENC_OBJECT, 'ProcessWorkitemRequest', $this->namespace);
 			}
+			$arg = new stdClass();
 			$arg->actions = $processRequestArray;
 			return $this->_process($arg);
 		} else {
@@ -659,10 +680,12 @@ class SforceBaseClient {
 	 * @param string Type   Object Type
 	 * @return DescribeLayoutResult
 	 */
-	public function describeLayout($type) {
+	public function describeLayout($type, array $recordTypeIds=null) {
 		$this->setHeaders("describeLayout");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->sObjectType = new SoapVar($type, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
+		if (isset($recordTypeIds) && count($recordTypeIds)) 
+			$arg->recordTypeIds = $recordTypeIds;
 		return $this->sforce->describeLayout($arg)->result;
 	}
 
@@ -675,7 +698,7 @@ class SforceBaseClient {
 	 */
 	public function describeSObject($type) {
 		$this->setHeaders("describeSObject");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->sObjectType = new SoapVar($type, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		return $this->sforce->describeSObject($arg)->result;
 	}
@@ -713,7 +736,7 @@ class SforceBaseClient {
 	 */
 	public function describeDataCategoryGroups($sObjectType) {
 		$this->setHeaders('describeDataCategoryGroups');
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->sObjectType = new SoapVar($sObjectType, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		return $this->sforce->describeDataCategoryGroups($arg)->result;
 	}
@@ -727,7 +750,7 @@ class SforceBaseClient {
 	 */
 	public function describeDataCategoryGroupStructures(array $pairs, $topCategoriesOnly) {
 		$this->setHeaders('describeDataCategoryGroupStructures');
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->pairs = $pairs;
 		$arg->topCategoriesOnly = new SoapVar($topCategoriesOnly, XSD_BOOLEAN, 'boolean', 'http://www.w3.org/2001/XMLSchema');
 
@@ -745,7 +768,7 @@ class SforceBaseClient {
 	 */
 	public function getDeleted($type, $startDate, $endDate) {
 		$this->setHeaders("getDeleted");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->sObjectType = new SoapVar($type, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		$arg->startDate = $startDate;
 		$arg->endDate = $endDate;
@@ -763,7 +786,7 @@ class SforceBaseClient {
 	 */
 	public function getUpdated($type, $startDate, $endDate) {
 		$this->setHeaders("getUpdated");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->sObjectType = new SoapVar($type, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		$arg->startDate = $startDate;
 		$arg->endDate = $endDate;
@@ -780,10 +803,11 @@ class SforceBaseClient {
 	 */
 	public function query($query) {
 		$this->setHeaders("query");
-		$QueryResult = $this->sforce->query(array (
-                      'queryString' => $query
+		$raw = $this->sforce->query(array (
+					  'queryString' => $query
 		))->result;
-		$this->_handleRecords($QueryResult);
+		$QueryResult = new QueryResult($raw);
+		$QueryResult->setSf($this); // Dependency Injection
 		return $QueryResult;
 	}
 
@@ -796,10 +820,11 @@ class SforceBaseClient {
 	 */
 	public function queryMore($queryLocator) {
 		$this->setHeaders("queryMore");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->queryLocator = $queryLocator;
-		$QueryResult = $this->sforce->queryMore($arg)->result;
-		$this->_handleRecords($QueryResult);
+		$raw = $this->sforce->queryMore($arg)->result;
+		$QueryResult = new QueryResult($raw);
+		$QueryResult->setSf($this); // Dependency Injection
 		return $QueryResult;
 	}
 
@@ -812,26 +837,14 @@ class SforceBaseClient {
 	 */
 	public function queryAll($query, $queryOptions = NULL) {
 		$this->setHeaders("queryAll");
-		$QueryResult = $this->sforce->queryAll(array (
-                        'queryString' => $query
+		$raw = $this->sforce->queryAll(array (
+						'queryString' => $query
 		))->result;
-		$this->_handleRecords($QueryResult);
+		$QueryResult = new QueryResult($raw);
+		$QueryResult->setSf($this); // Dependency Injection
 		return $QueryResult;
 	}
 
-
-	private function _handleRecords(& $QueryResult) {
-		if ($QueryResult->size > 0) {
-			if ($QueryResult->size == 1) {
-				$recs = array (
-				$QueryResult->records
-				);
-			} else {
-				$recs = $QueryResult->records;
-			}
-			$QueryResult->records = $recs;
-		}
-	}
 
 	/**
 	 * Retrieves one or more objects based on the specified object IDs.
@@ -843,7 +856,7 @@ class SforceBaseClient {
 	 */
 	public function retrieve($fieldList, $sObjectType, $ids) {
 		$this->setHeaders("retrieve");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->fieldList = $fieldList;
 		$arg->sObjectType = new SoapVar($sObjectType, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		$arg->ids = $ids;
@@ -858,9 +871,9 @@ class SforceBaseClient {
 	 */
 	public function search($searchString) {
 		$this->setHeaders("search");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->searchString = new SoapVar($searchString, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
-		return $this->sforce->search($arg)->result;
+		return new SforceSearchResult($this->sforce->search($arg)->result);
 	}
 
 	/**
@@ -886,7 +899,7 @@ class SforceBaseClient {
 	 */
 	public function setPassword($userId, $password) {
 		$this->setHeaders("setPassword");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->userId = new SoapVar($userId, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		$arg->password = $password;
 		return $this->sforce->setPassword($arg);
@@ -900,9 +913,371 @@ class SforceBaseClient {
 	 */
 	public function resetPassword($userId) {
 		$this->setHeaders("resetPassword");
-		$arg = new stdClass;
+		$arg = new stdClass();
 		$arg->userId = new SoapVar($userId, XSD_STRING, 'string', 'http://www.w3.org/2001/XMLSchema');
 		return $this->sforce->resetPassword($arg)->result;
 	}
 }
-?>
+
+class SforceSearchResult {
+	public $searchRecords;
+
+	public function __construct($response) {
+
+		if($response instanceof SforceSearchResult) {
+			$this->searchRecords = $response->searchRecords;
+		} else {
+			$this->searchRecords = array();
+			if (isset($response->searchRecords)) {
+				if (is_array($response->searchRecords)) {
+					foreach ($response->searchRecords as $record) {
+						$sobject = new SObject($record->record);
+						array_push($this->searchRecords, $sobject);
+					};
+				} else {
+					$sobject = new SObject($response->searchRecords->record);
+					array_push($this->records, $sobject);
+				}
+			}
+		}
+	}
+}
+
+class QueryResult implements Iterator{
+	public $queryLocator;
+	public $done;
+	public $records;
+	public $size;
+
+	public $pointer; // Current iterator location
+	private $sf; // SOAP Client
+	
+	public function __construct($response) {
+		$this->queryLocator = $response->queryLocator;
+		$this->done = $response->done;
+		$this->size = $response->size;
+		
+		$this->pointer = 0;
+		$this->sf = false;
+
+		if($response instanceof QueryResult) {
+			$this->records = $response->records;
+		} else {
+			$this->records = array();
+			if (isset($response->records)) {
+				if (is_array($response->records)) {
+					foreach ($response->records as $record) {
+						array_push($this->records, $record);
+					};
+				} else {
+					array_push($this->records, $record);
+				}
+			}
+		}
+	}
+	
+	public function setSf(SforceBaseClient $sf) { $this->sf = $sf; } // Dependency Injection
+	
+	// Basic Iterator implementation functions
+	public function rewind() { $this->pointer = 0; }
+	public function next() { ++$this->pointer; }
+	public function key() { return $this->pointer; }
+	public function current() { return new SObject($this->records[$this->pointer]); }
+	
+	public function valid() {
+		while ($this->pointer >= count($this->records)) {
+			// Pointer is larger than (current) result set; see if we can fetch more
+			if ($this->done === false) {
+				if ($this->sf === false) throw new Exception("Dependency not met!");
+				$response = $this->sf->queryMore($this->queryLocator);
+				$this->records = array_merge($this->records, $response->records); // Append more results
+				$this->done = $response->done;
+				$this->queryLocator = $response->queryLocator;
+			} else {
+				return false; // No more records to fetch
+			}
+		}
+		if (isset($this->records[$this->pointer])) return true;
+		
+		throw new Exception("QueryResult has gaps in the record data?");
+	}
+}
+
+class SObject {
+	public $type;
+	public $fields;
+//	public $sobject;
+
+	public function __construct($response=NULL) {
+		if (!isset($response) && !$response) {
+			return;
+		}
+
+		foreach ($response as $responseKey => $responseValue) {
+			if (in_array(strval($responseKey), array('Id', 'type', 'any'))) {
+				continue;
+			}
+			$this->$responseKey = $responseValue;
+		}
+
+		if (isset($response->Id)) {
+			$this->Id = is_array($response->Id) ? $response->Id[0] : $response->Id;
+		}
+
+		if (isset($response->type)) {
+			$this->type = $response->type;
+		}
+
+		if (isset($response->any)) {
+			try {
+				//$this->fields = $this->convertFields($response->any);
+				// If ANY is an object, instantiate another SObject
+				if ($response->any instanceof stdClass) {
+					if ($this->isSObject($response->any)) {
+						$anArray = array();
+						$sobject = new SObject($response->any);
+						$anArray[] = $sobject;
+						$this->sobjects = $anArray;
+					} else {
+						// this is for parent to child relationships
+						$this->queryResult = new QueryResult($response->any);
+					}
+
+				} else {
+					// If ANY is an array
+					if (is_array($response->any)) {
+						// Loop through each and perform some action.
+						$anArray = array();
+
+						// Modify the foreach to have $key=>$value
+						// Added on 28th April 2008
+						foreach ($response->any as $key=>$item) {
+							if ($item instanceof stdClass) {
+								if ($this->isSObject($item)) {
+									$sobject = new SObject($item);
+									// make an associative array instead of a numeric one
+									$anArray[$key] = $sobject;
+								} else {
+									// this is for parent to child relationships
+									//$this->queryResult = new QueryResult($item);
+									if (!isset($this->queryResult)) {
+										$this->queryResult = array();
+									}
+									array_push($this->queryResult, new QueryResult($item));
+								}
+							} else {
+								//$this->fields = $this->convertFields($item);
+
+								if (strpos($item, 'sf:') === false) {
+									$currentXmlValue = sprintf('<sf:%s>%s</sf:%s>', $key, $item, $key);
+								} else {
+									$currentXmlValue = $item;
+								}
+
+								if (!isset($fieldsToConvert)) {
+									$fieldsToConvert = $currentXmlValue;
+								} else {
+									$fieldsToConvert .= $currentXmlValue;
+								}
+							}
+						}
+
+						if (isset($fieldsToConvert)) {
+							// If this line is commented, then the fields becomes a stdclass object and does not have the name variable
+							// In this case the foreach loop on line 252 runs successfuly
+							$this->fields = $this->convertFields($fieldsToConvert);
+						}
+
+						if (sizeof($anArray) > 0) {
+							// To add more variables to the the top level sobject
+							foreach ($anArray as $key=>$children_sobject) {
+								$this->fields->$key = $children_sobject;
+							}
+							//array_push($this->fields, $anArray);
+							// Uncommented on 28th April since all the sobjects have now been moved to the fields
+							//$this->sobjects = $anArray;
+						}
+
+						/*
+						   $this->fields = $this->convertFields($response->any[0]);
+						   if (isset($response->any[1]->records)) {
+						   $anArray = array();
+						   if ($response->any[1]->size == 1) {
+						   $records = array (
+						   $response->any[1]->records
+						   );
+						   } else {
+						   $records = $response->any[1]->records;
+						   }
+						   foreach ($records as $record) {
+						   $sobject = new SObject($record);
+						   array_push($anArray, $sobject);
+						   }
+						   $this->sobjects = $anArray;
+						   } else {
+						   $anArray = array();
+						   $sobject = new SObject($response->any[1]);
+						   array_push($anArray, $sobject);
+						   $this->sobjects = $anArray;
+						   }
+						 */
+					} else {
+						$this->fields = $this->convertFields($response->any);
+					}
+				}
+			} catch (Exception $e) {
+				var_dump('exception: ', $e);
+			}
+		}
+	}
+	
+	function __get($name) {	return (isset($this->fields->$name))? $this->fields->$name : false; }
+	function __isset($name) { return isset($this->fields->$name); }
+
+	/**
+	 * Parse the "any" string from an sObject.  First strip out the sf: and then
+	 * enclose string with <Object></Object>.  Load the string using
+	 * simplexml_load_string and return an array that can be traversed.
+	 */
+	function convertFields($any) {
+		$str = preg_replace('{sf:}', '', $any);
+
+		$array = $this->xml2array('<Object xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'.$str.'</Object>', 2);
+
+		$xml = new stdClass();
+		if (!count($array['Object']))
+			return $xml;
+
+		foreach ($array['Object'] as $k=>$v) {
+			$xml->$k = $v;
+		}
+
+		//$new_string = '<Object xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'.$new_string.'</Object>';
+		//$new_string = $new_string;
+		//$xml = simplexml_load_string($new_string);
+		return $xml;
+	}
+
+	/**
+	 * 
+	 * @param string $contents
+	 * @return array
+	 */
+	function xml2array($contents, $get_attributes=1) {
+		if(!$contents) return array();
+
+		if(!function_exists('xml_parser_create')) {
+			//print "'xml_parser_create()' function not found!";
+			return array('not found');
+		}
+		//Get the XML parser of PHP - PHP must have this module for the parser to work
+		$parser = xml_parser_create();
+		xml_parser_set_option( $parser, XML_OPTION_CASE_FOLDING, 0 );
+		xml_parser_set_option( $parser, XML_OPTION_SKIP_WHITE, 1 );
+		xml_parse_into_struct( $parser, $contents, $xml_values );
+		xml_parser_free( $parser );
+
+		if(!$xml_values) return;//Hmm...
+
+		//Initializations
+		$xml_array = array();
+		$parents = array();
+		$opened_tags = array();
+		$arr = array();
+
+		$current = &$xml_array;
+
+		//Go through the tags.
+		foreach($xml_values as $data) {
+			unset($attributes,$value);//Remove existing values, or there will be trouble
+
+			//This command will extract these variables into the foreach scope
+			// tag(string), type(string), level(int), attributes(array).
+			extract($data);//We could use the array by itself, but this cooler.
+
+			$result = '';
+			if ($get_attributes) {
+				switch ($get_attributes) {
+					case 1:
+						$result = array();
+						if(isset($value)) $result['value'] = $value;
+
+						//Set the attributes too.
+						if(isset($attributes)) {
+							foreach($attributes as $attr => $val) {
+								if($get_attributes == 1) $result['attr'][$attr] = $val; //Set all the attributes in a array called 'attr'
+								/**  :TODO: should we change the key name to '_attr'? Someone may use the tagname 'attr'. Same goes for 'value' too */
+							}
+						}
+						break;
+
+					case 2:
+						$result = array();
+						if (isset($value)) {
+							$result = $value;
+						}
+
+						//Check for nil and ignore other attributes.
+						if (isset($attributes) && isset($attributes['xsi:nil']) && !strcasecmp($attributes['xsi:nil'], 'true')) {
+							$result = null;
+						}
+						break;
+				}
+			} elseif (isset($value)) {
+				$result = $value;
+			}
+
+			//See tag status and do the needed.
+			if($type == "open") {//The starting of the tag '<tag>'
+				$parent[$level-1] = &$current;
+
+				if(!is_array($current) or (!in_array($tag, array_keys($current)))) { //Insert New tag
+					$current[$tag] = $result;
+					$current = &$current[$tag];
+
+				} else { //There was another element with the same tag name
+					if(isset($current[$tag][0])) {
+						array_push($current[$tag], $result);
+					} else {
+						$current[$tag] = array($current[$tag],$result);
+					}
+					$last = count($current[$tag]) - 1;
+					$current = &$current[$tag][$last];
+				}
+
+			} elseif($type == "complete") { //Tags that ends in 1 line '<tag />'
+				//See if the key is already taken.
+				if(!isset($current[$tag])) { //New Key
+					$current[$tag] = $result;
+
+				} else { //If taken, put all things inside a list(array)
+					if((is_array($current[$tag]) and $get_attributes == 0)//If it is already an array...
+							or (isset($current[$tag][0]) and is_array($current[$tag][0]) and ($get_attributes == 1 || $get_attributes == 2))) {
+						array_push($current[$tag],$result); // ...push the new element into that array.
+					} else { //If it is not an array...
+						$current[$tag] = array($current[$tag],$result); //...Make it an array using using the existing value and the new value
+					}
+				}
+
+			} elseif($type == 'close') { //End of tag '</tag>'
+				$current = &$parent[$level-1];
+			}
+		}
+
+		return($xml_array);
+	}
+
+	/*
+	 * If the stdClass has a done, we know it is a QueryResult
+	 */
+	function isQueryResult($param) {
+		return isset($param->done);
+	}
+
+	/*
+	 * If the stdClass has a type, we know it is an SObject
+	 */
+	function isSObject($param) {
+		return isset($param->type);
+	}
+}
