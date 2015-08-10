@@ -12,13 +12,32 @@ The code that interacts with the Salesforce Bulk API is taken from a tool suite
 called [Workbench](https://github.com/ryanbrainard/forceworkbench).
 
 
-###Usage & Configuration
+###Configuration
 
-The first thing you will need to do is edit the config.json file. 
-If you choose to leave the Salesforce password blank, there will be a prompt whenever it is required.
+The config.json file is where you define which objects to sync along with your Salesforce credentials.
 
-Currently, this is intended for command line use but implementation as part of a
-larger project or webpage is simply a matter of removing the password prompt and echo statements.
+The fields are as follows:
+
+* objects
+  * {objectName}
+    * fields 
+      * {field\_api\_name\_1} - if just an asterix is provided, all fields will be retrieved
+      * {field\_api\_name\_2}
+      * {field\_api\_name\_n}
+
+* salesforce
+  * user
+  * pass - optional, prompts on each run if not present
+  * endpoint - optional, defaults to endpoint provided in partner.wsdl (production)
+
+* database
+  * type - currently only supports MySQL
+  * host - hostname to connect to
+  * user
+  * pass
+  * database - must already exist
+
+See the provided config.json for an example.
 
 #####PHP
 

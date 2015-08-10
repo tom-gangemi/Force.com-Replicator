@@ -24,7 +24,8 @@
 
     "salesforce": {
         "user":"",
-        "pass":""
+        "pass":"",
+        "endpoint":"https://test.salesforce.com/services/Soap/u/34.0"
     },
 
     "database": {

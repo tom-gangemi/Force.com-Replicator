@@ -18,6 +18,7 @@ class Salesforce {
 	public $session;
 	private $user;
 	private $pass;
+	private $endpoint;
 
 	const WSDL = 'soapclient/partner.wsdl.xml';
 
@@ -27,7 +28,12 @@ class Salesforce {
 		$this->pass = $pass;
 		$this->sfdc = null;
 		$this->session = null;
+		$this->endpoint = null;
 
+	}
+
+	public function setEndpoint($endpoint) {
+		$this->endpoint = $endpoint;
 	}
 
 	public function getSObjectFields($objectNames) {
@@ -131,6 +137,9 @@ class Salesforce {
 			try {
 				$this->sfdc = new SforcePartnerClient();
 				$this->sfdc->createConnection($this::WSDL);
+				if($this->endpoint != null)
+					$this->sfdc->setEndpoint($this->endpoint);
+
 				if($this->pass === null)
 					$pass = $this::prompt("Password:");
 				else
