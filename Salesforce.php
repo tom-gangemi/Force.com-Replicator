@@ -120,27 +120,6 @@ class Salesforce {
 			else
 				return true;
 		}
-
-		die;
-		
-		$result = new stdClass;
-		// convert multi-line string into array
-		$result->data = explode("\n", reset($queryResults)); // breaking on multiline fields
-
-		if(count($result->data) == 1) {
-			// no records returned
-			$redis->set($soql, serialize(null));
-			return null;
-
-		} else {
-
-			// remove empty row
-			array_pop($result->data);
-			// first row is header
-			$result->header = array_shift($result->data);
-
-			return $result;
-		}
 	}
 
 	private function login() {
