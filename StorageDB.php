@@ -4,11 +4,13 @@
  * FORCE.COM REPLICATOR
  * @author Tom Gangemi
  *
- * DB.php
+ * StorageDB.php
  * Provides and interface to a local datastore as a replication target.
  */
 
-class DB {
+require_once 'StorageInterface.php';
+
+class StorageDB implements StorageInterface {
 
 	public $batchInsertSize;
 	private $db;

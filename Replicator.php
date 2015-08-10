@@ -9,7 +9,7 @@
  */
 
 require_once('Salesforce.php');
-require_once('DB.php');
+require_once('StorageDB.php');
 
 class Replicator {
 
@@ -33,7 +33,7 @@ class Replicator {
 			$pass = null;
 
 		$this->sf = new Salesforce($this->config['salesforce']['user'], $pass);
-		$this->db = new DB(
+		$this->db = new StorageDB(
 			$this->config['database']['host'], 
 			$this->config['database']['user'], 
 			$this->config['database']['pass'], 
