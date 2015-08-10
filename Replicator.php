@@ -340,14 +340,6 @@ class Replicator {
 
 if(!count(debug_backtrace())) { // only run if being called directly
 	
-	// $fp = fopen("php://memory", 'r+');
-	// fputs($fp, "foo,bar,\"som\nething\"\nyea,yea,yea");
-	// rewind($fp);
-	// // echo stream_get_contents($fp);
-	// while (($data = fgetcsv($fp, 1000, ",")) !== FALSE)
-	// 	print_r($data);
-	
-	// fclose($fp);
 	$r = new Replicator();
 	$r->syncData();
 
