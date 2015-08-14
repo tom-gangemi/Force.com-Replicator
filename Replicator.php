@@ -270,6 +270,7 @@ class Replicator {
 					case 'reference':
 					case 'string':
 					case 'picklist':
+					case 'multipicklist':
 					case 'textarea':
 					case 'phone':
 					case 'email':
