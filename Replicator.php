@@ -196,7 +196,21 @@ class Replicator {
 			$objectUpserts = array();
 
 			// query object schemas from Salesforce
-			$describeResult = $this->sf->getSObjectFields(array_keys($objectsToQuery));
+            // SalesForce only supports a maximum of 100 queries per call so we need to chunk this...
+
+            $describeBatchSize = @$this->config['salesforce']['describeBatchSize'];
+            if (!$describeBatchSize) $describeBatchSize=100;
+
+            $describeBatches = array_chunk( array_keys($objectsToQuery), $describeBatchSize );
+            $describeResult = array();
+
+            foreach( $describeBatches as $describeBatch ) {
+                // Query SalesForce for each batch of tables
+
+                $describeBatchResult = $this->sf->getSObjectFields($describeBatch);
+                $describeResult = array_merge($describeResult,$describeBatchResult);
+
+            }
 
 			foreach ($describeResult as $objectName => $fields) {
 
