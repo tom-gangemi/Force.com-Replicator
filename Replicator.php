@@ -258,10 +258,13 @@ class Replicator {
 	}
 
 	private function loadConfig() {
+		$configContents = file_get_contents($this::CONFIG_FILE);
+		if($configContents === false)
+			throw new Exception("error reading config file: " . $this::CONFIG_FILE);
 
-		$this->config = json_decode(file_get_contents($this::CONFIG_FILE), true);
+		$this->config = json_decode($configContents, true);
 		if($this->config === null)
-			throw new Exception("error reading " . $this::CONFIG_FILE);		
+			throw new Exception("error parsing config file: " . $this::CONFIG_FILE);
 
 		// validate salesforce config
 		if(empty($this->config['salesforce']) || empty($this->config['salesforce']['user']))
