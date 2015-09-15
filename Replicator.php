@@ -13,11 +13,11 @@ require_once('StorageDB.php');
 
 class Replicator {
 
-	private $sf = null;             // Salesforce interface
-	private $db = null;             // database interface
-	private $config = null;         // the config file in memory
-	private $schemaSynced = false;  // has the schema been synced
-	private $fieldTypes = null;     // keep track of field types
+	private $sf = null;				// Salesforce interface
+	private $db = null;				// database interface
+	private $config = null;			// the config file in memory
+	private $schemaSynced = false;	// has the schema been synced
+	private $fieldTypes = null;		// keep track of field types
 	private $fieldsToQuery = null;
 
 	const CONFIG_FILE = 'config.json';
@@ -114,7 +114,7 @@ class Replicator {
 			$rowCount = 0;
 			$upsertBatchSize = @$this->config['objects'][$objectName]['options']['upsertBatchSize'];
 
- 			while(($data = fgetcsv($fh, 0, ',', '"', chr(0))) !== false) {
+			while(($data = fgetcsv($fh, 0, ',', '"', chr(0))) !== false) {
 
 				if(count($data) != $fieldCount) {
 					print_r($data);
@@ -134,9 +134,9 @@ class Replicator {
 					$upsertCsv = array();
 					$rowCount = 0;
 				}
- 			}
+			}
 
- 			if($rowCount > 0)
+			if($rowCount > 0)
 				$this->db->upsertCsvValues($objectName, $header, $upsertCsv, $upsertBatchSize);
 
 			$this->db->commitTransaction();
@@ -196,21 +196,21 @@ class Replicator {
 			$objectUpserts = array();
 
 			// query object schemas from Salesforce
-            // SalesForce only supports a maximum of 100 queries per call so we need to chunk this...
+			// SalesForce only supports a maximum of 100 queries per call so we need to chunk this...
 
-            $describeBatchSize = @$this->config['salesforce']['describeBatchSize'];
-            if (!$describeBatchSize) $describeBatchSize=100;
+			$describeBatchSize = @$this->config['salesforce']['describeBatchSize'];
+			if (!$describeBatchSize) $describeBatchSize=100;
 
-            $describeBatches = array_chunk( array_keys($objectsToQuery), $describeBatchSize );
-            $describeResult = array();
+			$describeBatches = array_chunk( array_keys($objectsToQuery), $describeBatchSize );
+			$describeResult = array();
 
-            foreach( $describeBatches as $describeBatch ) {
-                // Query SalesForce for each batch of tables
+			foreach( $describeBatches as $describeBatch ) {
+				// Query SalesForce for each batch of tables
 
-                $describeBatchResult = $this->sf->getSObjectFields($describeBatch);
-                $describeResult = array_merge($describeResult,$describeBatchResult);
+				$describeBatchResult = $this->sf->getSObjectFields($describeBatch);
+				$describeResult = array_merge($describeResult,$describeBatchResult);
 
-            }
+			}
 
 			foreach ($describeResult as $objectName => $fields) {
 
@@ -242,6 +242,14 @@ class Replicator {
 
 				// get mysql definition for each field
 				$fieldDefs = array();
+				foreach($newFields as $field) {
+					try {
+						$objectUpserts[$objectName][$field->name] = $this->createFieldDefinition($field);
+					} catch (Exception $e) {
+						throw new Exception("Encountered problem creating database field definition in $objectName table. Problem was as follows: ".$e->getMessage());
+					}
+				}
+
 				foreach($newFields as $field)
 					$objectUpserts[$objectName][$field->name] = $this->createFieldDefinition($field);
 
@@ -288,6 +296,7 @@ class Replicator {
 					case 'textarea':
 					case 'phone':
 					case 'email':
+					case 'location':
 						if($field->length >= 1024)
 							return 'TEXT';
 						else
@@ -302,7 +311,7 @@ class Replicator {
 					case 'currency':
 						return 'DECIMAL(' . $field->precision . ',' . $field->scale . ')';
 					default:
-						throw new Exception("unsupported field type ({$field->type})");
+						throw new Exception("unsupported field type ({$field->type}) for field {$field->name}");
 				}
 			default:
 				throw new Exception("unsupported database type ($databaseType)");
